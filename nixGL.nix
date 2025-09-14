@@ -13,6 +13,7 @@ nvidiaVersionFile ? null,
 # This is one by default, you can switch it to off if you want to reduce a
 # bit the size of nixGL closure.
 enable32bits ? stdenv.hostPlatform.isx86
+, nvidiaURL ? "https://us.download.nvidia.com/XFree86/Linux-x86_64"
 , stdenv, writeTextFile, shellcheck, pcre, runCommand, linuxPackages
 , fetchurl, lib, runtimeShell, bumblebee, libglvnd, vulkan-validation-layers
 , mesa, libvdpau-va-gl, intel-media-driver, pkgsi686Linux, driversi686Linux
@@ -41,22 +42,22 @@ let
       inherit name;
       # add the 32 bits drivers if needed
       text = let
-        mesa-drivers = [ mesa.drivers ]
-          ++ lib.optional enable32bits pkgsi686Linux.mesa.drivers;
+        mesa-drivers = [ mesa ]
+          ++ lib.optional enable32bits pkgsi686Linux.mesa;
         libvdpau = [ libvdpau-va-gl ]
           ++ lib.optional enable32bits pkgsi686Linux.libvdpau-va-gl;
         glxindirect = runCommand "mesa_glxindirect" { } (''
           mkdir -p $out/lib
-          ln -s ${mesa.drivers}/lib/libGLX_mesa.so.0 $out/lib/libGLX_indirect.so.0
+          ln -s ${mesa}/lib/libGLX_mesa.so.0 $out/lib/libGLX_indirect.so.0
         '');
       in ''
         #!${runtimeShell}
         export GBM_BACKENDS_PATH=${lib.makeSearchPathOutput "lib" "lib/gbm" mesa-drivers}
         export LIBGL_DRIVERS_PATH=${lib.makeSearchPathOutput "lib" "lib/dri" mesa-drivers}
         export LIBVA_DRIVERS_PATH=${lib.makeSearchPathOutput "out" "lib/dri" (mesa-drivers ++ vadrivers)}
-        ${''export __EGL_VENDOR_LIBRARY_FILENAMES=${mesa.drivers}/share/glvnd/egl_vendor.d/50_mesa.json${
+        ${''export __EGL_VENDOR_LIBRARY_FILENAMES=${mesa}/share/glvnd/egl_vendor.d/50_mesa.json${
           lib.optionalString enable32bits
-          ":${pkgsi686Linux.mesa.drivers}/share/glvnd/egl_vendor.d/50_mesa.json"
+          ":${pkgsi686Linux.mesa}/share/glvnd/egl_vendor.d/50_mesa.json"
           }"''${__EGL_VENDOR_LIBRARY_FILENAMES:+:$__EGL_VENDOR_LIBRARY_FILENAMES}"''
         }
         export LD_LIBRARY_PATH=${lib.makeLibraryPath mesa-drivers}:${lib.makeSearchPathOutput "lib" "lib/vdpau" libvdpau}:${glxindirect}/lib:${lib.makeLibraryPath [libglvnd]}"''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
@@ -76,7 +77,7 @@ let
           inherit version;
           src = let
             url =
-              "https://us.download.nvidia.com/XFree86/Linux-x86_64/${version}/NVIDIA-Linux-x86_64-${version}.run";
+              "${nvidiaURL}/${version}/NVIDIA-Linux-x86_64-${version}.run";
           in if sha256 != null then
             fetchurl { inherit url sha256; }
           else
@@ -169,11 +170,11 @@ let
         icd = runCommand "mesa_icd" { } (
           # 64 bits icd
           ''
-            ls ${mesa.drivers}/share/vulkan/icd.d/*.json > f
+            ls ${mesa}/share/vulkan/icd.d/*.json > f
           ''
           #  32 bits ones
           + lib.optionalString enable32bits ''
-            ls ${pkgsi686Linux.mesa.drivers}/share/vulkan/icd.d/*.json >> f
+            ls ${pkgsi686Linux.mesa}/share/vulkan/icd.d/*.json >> f
           ''
           # concat everything as a one line string with ":" as seperator
           + ''cat f | xargs | sed "s/ /:/g" > $out'');
